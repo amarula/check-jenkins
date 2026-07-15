@@ -97,8 +97,32 @@ node('android-build') {
             explainError()
         } else {
             notification.monitoredStage('Deploy') {
-                def filenames = 'bazel-bin/plugins/checks-jenkins/checks-jenkins.jar'
-                archiveArtifacts artifacts: filenames, fingerprint: true, onlyIfSuccessful: true
+                def jarPath = 'bazel-bin/plugins/checks-jenkins/checks-jenkins.jar'
+                archiveArtifacts artifacts: jarPath, fingerprint: true, onlyIfSuccessful: true
+
+                // BRANCH may be a branch or a tag. Only create a GitHub release
+                // when it's a real annotated/lightweight tag.
+                def tagName = BRANCH?.trim()
+                def isTag = tagName && sh(
+                    returnStatus: true,
+                    script: """cd plugin-source && git tag -l "\${1}" | grep -Fx "\${1}" >/dev/null""".replace('${1}', tagName)
+                ) == 0
+
+                if (isTag) {
+                    writeFile file: 'release-notes.md', text: "checks-jenkins plugin release `${tagName}`."
+                    createGitHubRelease(
+                        credentialId: 'github-token',
+                        repository: 'amarula/checks-jenkins',
+                        tag: tagName,
+                        bodyFile: 'release-notes.md',
+                    )
+                    uploadGithubReleaseAsset(
+                        credentialId: 'github-token',
+                        repository: 'amarula/checks-jenkins',
+                        tagName: tagName,
+                        uploadAssets: [[filePath: jarPath]],
+                    )
+                }
 
                 if (KEEP_BUILD.toBoolean()) {
                     currentBuild.setKeepLog(true)
