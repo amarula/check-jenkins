@@ -2,7 +2,7 @@
 
 @Library('ci_scripts')
 @Library('repo_jenkins_lib')
-import com.amarula.build.Verification
+import com.amarula.build.Build
 import com.amarula.ui.Ui
 
 node('android-build') {
@@ -18,7 +18,7 @@ node('android-build') {
         .build()
 
     def repoUrl = 'https://gerrithub.io/a/amarula/checks-jenkins'
-    def ver = new Verification(this, env, credentials)
+    def ver = new Build(this, env, credentials)
 
     final def GERRIT_TAG = 'v3.14.0'
     final def GERRIT_REPO = 'https://gerrit.googlesource.com/gerrit'
@@ -31,7 +31,7 @@ node('android-build') {
             ver.build(repoUrl, [
                 'Setup': {
                     sh """#!/bin/bash -el
-                        # Jenkins (via the Verification class) checks the plugin
+                        # Jenkins (via the Build class) checks the plugin
                         # out into a subdirectory of WORKSPACE named after the
                         # repo — that is PWD.  We must:
                         #   1. Move the plugin source aside into plugin-source/.
