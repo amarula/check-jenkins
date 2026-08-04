@@ -59,7 +59,7 @@ class GetConfig implements RestReadView<ProjectResource> {
       throws NoSuchProjectException {
     PluginConfig globalConfig = config.getFromGerritConfig(pluginName);
     Set<JenkinsChecksConfig> result = new HashSet<>();
-    Config cfg = config.getProjectPluginConfig(project.getNameKey(), pluginName);
+    Config cfg = config.getProjectPluginConfigWithInheritance(project.getNameKey(), pluginName);
 
     for (String instance : cfg.getSubsections(JENKINS_SECTION)) {
         addJenkinsIstance(result, instance, cfg);
