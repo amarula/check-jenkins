@@ -19,6 +19,7 @@ import "./test/test-setup";
 import { assert } from "@open-wc/testing";
 import {
   CoverageClient,
+  coverageUrlId,
   parsePct,
   parseProject,
   getLowCoverageReason,
@@ -108,6 +109,27 @@ suite("getLowCoverageReason", () => {
         "Fix bug in coverage\n\nLow-Coverage-Reason: HARD_TO_TEST\n\nMore context",
       ),
       "HARD_TO_TEST",
+    );
+  });
+});
+
+suite("coverageUrlId", () => {
+  test("defaults to coverage when coverage_id is unset", () => {
+    assert.equal(
+      coverageUrlId({ name: "jenkins", url: "http://jenkins", user: "" }),
+      "coverage",
+    );
+  });
+
+  test("returns the configured coverage_id", () => {
+    assert.equal(
+      coverageUrlId({
+        name: "jenkins",
+        url: "http://jenkins",
+        user: "",
+        coverage_id: "jacoco",
+      }),
+      "jacoco",
     );
   });
 });

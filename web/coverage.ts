@@ -155,6 +155,15 @@ export function coverageEmoji(pct: number | undefined): string {
   return COVERAGE_CRITICAL;
 }
 
+/**
+ * Returns the Jenkins Coverage plugin report URL id for a config.  Defaults to
+ * the plugin's built-in id ("coverage") when the config does not override it
+ * via `coverage_id`.
+ */
+export function coverageUrlId(jenkins: Config): string {
+  return jenkins.coverage_id ?? "coverage";
+}
+
 export function parsePct(pct?: string): number | undefined {
   if (!pct) return undefined;
   const n = parseFloat(pct.replace("%", "").replace("+", ""));
@@ -339,8 +348,8 @@ export class CoverageClient {
 
   /**
    * Fetches and merges both coverage endpoints:
-   *  1. /coverage/api/json       — project stats + per-file percentages
-   *  2. /coverage/modified/api/json — per-file modified-line blocks
+   *  1. /{coverage_id}/api/json       — project stats + per-file percentages
+   *  2. /{coverage_id}/modified/api/json — per-file modified-line blocks
    */
   private async fetchAllCoverage(
     jenkins: Config,
@@ -354,6 +363,7 @@ export class CoverageClient {
       return { projectResponse: null, modifiedLines: null };
     }
 
+    const coverageId = coverageUrlId(jenkins);
     const fetchOne = async (path: string) => {
       try {
         return await this.fetchFromJenkins(
@@ -368,8 +378,8 @@ export class CoverageClient {
 
     // Fetch both endpoints in parallel — they are independent.
     const [projResp, modResp] = await Promise.all([
-      fetchOne("coverage/api/json"),
-      fetchOne("coverage/modified/api/json"),
+      fetchOne(`${coverageId}/api/json`),
+      fetchOne(`${coverageId}/modified/api/json`),
     ]);
 
     // If both endpoints returned 403, the coverage plugin is not installed —
@@ -693,6 +703,8 @@ export class CoverageClient {
       if (!jenkins || !this.isEnabled())
         return { responseCode: ResponseCode.OK, runs: [] };
 
+      const coverageId = coverageUrlId(jenkins);
+
       await this.updateCache(jenkins, project, changeNum, patchNum);
 
       const entry = this.cache.get(
@@ -757,7 +769,7 @@ export class CoverageClient {
           attempt: entry?.attempt ?? undefined,
           results: coverageResults,
           statusLink: entry?.statusLink
-            ? `${entry.statusLink}coverage`
+            ? `${entry.statusLink}${coverageId}`
             : undefined,
         });
       }

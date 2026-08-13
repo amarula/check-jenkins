@@ -12,8 +12,10 @@ Two Jenkins REST endpoints are queried in parallel:
 
 | Endpoint | Response class | Purpose |
 |---|---|---|
-| `{statusLink}coverage/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.CoverageApi` | Project-level stats, per-file delta percentages |
-| `{statusLink}coverage/modified/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.ModifiedLinesCoverageApi` | Per-file modified line blocks with coverage types |
+| `{statusLink}{coverage_id}/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.CoverageApi` | Project-level stats, per-file delta percentages |
+| `{statusLink}{coverage_id}/modified/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.ModifiedLinesCoverageApi` | Per-file modified line blocks with coverage types |
+
+`{coverage_id}` is the Jenkins Coverage plugin report id (default `coverage`), configurable per Jenkins instance via the `coverage_id` config key.
 
 Both are fetched for the **most recent completed run** on the change's patchset.
 

@@ -25,6 +25,7 @@ The config is served by the `GetConfig` REST endpoint (`GET /projects/{project}/
 | `user` | **Yes** (for Basic auth) | Jenkins username. When omitted, the frontend uses cookie-based SSO (`credentials: 'include'`) |
 | `token` | No | API token or password for Basic auth. Combined with `user` as `user:token`, Base64-encoded |
 | `coverage` | No | Set to `true` to enable coverage features (requires Jenkins [Code Coverage API](https://plugins.jenkins.io/code-coverage-api/) plugin) |
+| `coverage_id` | No | Jenkins Coverage plugin report `id` (the URL segment under the build). Defaults to `coverage` |
 
 ## Per-project configuration (`project.config`)
 
@@ -36,6 +37,7 @@ Stored in the repository's `refs/meta/config` branch. Uses `[jenkins "..."]` sub
     user = gerrit-bot
     token = prod-api-token
     coverage = true
+    coverage_id = coverage
 
 [jenkins "staging-ci"]
     url = https://jenkins.staging.example.com/
@@ -106,6 +108,18 @@ When `coverage_enabled` is `true`:
 - Coverage data is pre-fetched on `SHOW_CHANGE`.
 
 When `false` or absent, the entire coverage subsystem is dormant — no coverage-related HTTP requests are made.
+
+## Coverage report id
+
+By default the plugin reads the coverage report published under the Coverage plugin's built-in id `coverage` (i.e. `{build}/coverage/`). If the pipeline publishes the report under a custom id — e.g. `recordCoverage(id: 'my-report', ...)` — set the same id in the config:
+
+```ini
+[jenkins "my-jenkins"]
+    coverage = true
+    coverage_id = my-report
+```
+
+The id must match the Jenkins Coverage plugin's pattern `\p{Alnum}[\p{Alnum}-_]*` and be unique within the job. When `coverage_id` is omitted, the plugin falls back to `coverage`.
 
 ## Config caching in the frontend
 
