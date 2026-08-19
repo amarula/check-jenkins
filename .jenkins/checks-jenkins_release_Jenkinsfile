@@ -128,13 +128,12 @@ node('android-build') {
                 // Only create a GitHub release when branchParam is a real tag.
                 // isTag and tagCommitish were determined inside Docker during Setup.
                 if (branchParam != 'master' && isTag) {
-                    writeFile file: 'release-notes.md', text: "checks-jenkins plugin release `${branchParam}`."
                     createGitHubRelease(
                         credentialId: 'github-release-token',
                         repository: 'amarula/checks-jenkins',
                         tag: branchParam,
                         commitish: tagCommitish,
-                        bodyFile: 'release-notes.md',
+                        generateReleaseNotes: true
                     )
                     uploadGithubReleaseAsset(
                         credentialId: 'github-release-token',
