@@ -61,7 +61,13 @@ class GetConfig implements RestReadView<ProjectResource> {
       throws NoSuchProjectException {
     PluginConfig globalConfig = config.getFromGerritConfig(pluginName);
     Set<JenkinsChecksConfig> result = new HashSet<>();
-    Config cfg = config.getProjectPluginConfigWithInheritance(project.getNameKey(), pluginName);
+    Config projectCfg = config.getProjectPluginConfig(project.getNameKey(), pluginName);
+    // A jenkins section defined on the project shadows any inherited config from
+    // parent projects. Only fall back to inheritance when the project itself has
+    // no jenkins section, so a config is not picked up twice.
+    Config cfg = projectCfg.getSubsections(JENKINS_SECTION).isEmpty()
+        ? config.getProjectPluginConfigWithInheritance(project.getNameKey(), pluginName)
+        : projectCfg;
 
     for (String instance : cfg.getSubsections(JENKINS_SECTION)) {
         addJenkinsIstance(result, instance, cfg);
