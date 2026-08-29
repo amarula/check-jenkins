@@ -177,6 +177,41 @@ export function parseProject(pathName: string): string {
   return pathName.substring(3, idx);
 }
 
+/**
+ * Decodes the HTML entities commonly emitted by Jenkins so they render as
+ * literal characters instead of raw markup.
+ */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+/**
+ * Converts the Jenkins Coverage plugin's `referenceBuild` value into clean
+ * text. The API returns an HTML anchor (e.g.
+ * `<a href="https://…/167/" class="model-link inside">… #167</a>`), which would
+ * otherwise leak raw tags into the check result message. When the value carries
+ * a URL this returns a markdown link so it stays clickable; otherwise it falls
+ * back to the plain text (or the input unchanged when nothing is extractable).
+ */
+export function formatReferenceBuild(referenceBuild: string): string {
+  const anchor = referenceBuild.match(
+    /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i,
+  );
+  if (anchor) {
+    const text = decodeHtmlEntities(anchor[2].replace(/<[^>]*>/g, "")).trim();
+    return text ? `[${text}](${anchor[1]})` : anchor[1];
+  }
+  const text = decodeHtmlEntities(referenceBuild.replace(/<[^>]*>/g, "")).trim();
+  return text || referenceBuild.trim();
+}
+
 export function getLowCoverageReason(
   commitMessage?: string,
 ): string | undefined {
@@ -756,7 +791,7 @@ export class CoverageClient {
             message:
               `Coverage metrics for this build. Loc: ${s.loc || "N/A"}.` +
               (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
-                ? ` Reference build: ${projectResp.referenceBuild}.`
+                ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
                 : ""),
           });
         }

@@ -23,6 +23,7 @@ import {
   parsePct,
   parseProject,
   getLowCoverageReason,
+  formatReferenceBuild,
 } from "./coverage";
 import { CoverageType, Side } from "@gerritcodereview/typescript-api/diff";
 import { PluginApi } from "@gerritcodereview/typescript-api/plugin";
@@ -109,6 +110,44 @@ suite("getLowCoverageReason", () => {
         "Fix bug in coverage\n\nLow-Coverage-Reason: HARD_TO_TEST\n\nMore context",
       ),
       "HARD_TO_TEST",
+    );
+  });
+});
+
+suite("formatReferenceBuild", () => {
+  test("converts an HTML anchor into a markdown link", () => {
+    assert.equal(
+      formatReferenceBuild(
+        '<a href="https://jenkins.example.com/job/foo/167/" class="model-link inside">foo » bar #167</a>',
+      ),
+      "[foo » bar #167](https://jenkins.example.com/job/foo/167/)",
+    );
+  });
+
+  test("decodes HTML entities in the link text", () => {
+    assert.equal(
+      formatReferenceBuild(
+        '<a href="https://jenkins.example.com/job/foo/167/">foo &amp; bar #167</a>',
+      ),
+      "[foo & bar #167](https://jenkins.example.com/job/foo/167/)",
+    );
+  });
+
+  test("strips tags when no anchor is present", () => {
+    assert.equal(
+      formatReferenceBuild('<span class="foo">bar #167</span>'),
+      "bar #167",
+    );
+  });
+
+  test("returns plain text unchanged for non-HTML input", () => {
+    assert.equal(formatReferenceBuild("bar #167"), "bar #167");
+  });
+
+  test("returns the URL when the anchor has no link text", () => {
+    assert.equal(
+      formatReferenceBuild('<a href="https://jenkins.example.com/job/foo/167/"></a>'),
+      "https://jenkins.example.com/job/foo/167/",
     );
   });
 });
