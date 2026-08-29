@@ -15,22 +15,15 @@
 package com.google.gerrit.plugins.checks.jenkins;
 
 import com.google.common.flogger.FluentLogger;
-import com.google.gerrit.plugins.checks.jenkins.GetConfig.JenkinsChecksConfig;
-import com.google.gerrit.plugins.checks.jenkins.ProxyTriggerAction.ProxyInput;
-import com.google.gerrit.extensions.annotations.PluginName;
-import com.google.gerrit.server.config.GerritServerConfig;
-import com.google.gerrit.server.config.PluginConfig;
-import com.google.gerrit.server.config.PluginConfigFactory;
-import com.google.gerrit.server.project.ProjectResource;
-import com.google.gerrit.extensions.restapi.Response;
-import com.google.gerrit.extensions.restapi.RestReadView;
-import com.google.gerrit.extensions.restapi.RestModifyView;
 import com.google.gerrit.extensions.restapi.BadRequestException;
+import com.google.gerrit.plugins.checks.jenkins.ProxyTriggerAction.ProxyInput;
+import com.google.gerrit.extensions.restapi.Response;
 import com.google.gerrit.extensions.restapi.RestApiException;
-import com.google.gerrit.server.project.NoSuchProjectException;
+import com.google.gerrit.extensions.restapi.RestModifyView;
+import com.google.gerrit.plugins.checks.jenkins.JenkinsConfig.Resolved;
+import com.google.gerrit.server.project.ProjectResource;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import org.eclipse.jgit.lib.Config;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -40,7 +33,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.time.Duration;
-import java.util.stream.Collectors;
 
 @Singleton
 public class ProxyTriggerAction implements RestModifyView<ProjectResource, ProxyInput> {
@@ -49,52 +41,32 @@ public class ProxyTriggerAction implements RestModifyView<ProjectResource, Proxy
   private final HttpClient httpClient = HttpClient.newBuilder()
       .connectTimeout(Duration.ofSeconds(CONNECTION_TIMEOUT)).build();
   final int REQUEST_TIMEOUT = 60;
-  private final PluginConfigFactory config;
-  private final String pluginName;
-  private static final String JENKINS_SECTION = "jenkins";
-  private static final String JENKINS_URL_KEY = "url";
-  private static final String JENKINS_TOKEN_KEY = "token";
-  private static final String JENKINS_USER_KEY = "user";
+  private final JenkinsConfig jenkinsConfig;
 
   @Inject
-  ProxyTriggerAction(PluginConfigFactory config, @PluginName String pluginName) {
-    this.config = config;
-    this.pluginName = pluginName;
+  ProxyTriggerAction(JenkinsConfig jenkinsConfig) {
+    this.jenkinsConfig = jenkinsConfig;
   }
 
   @Override
   public Response<?> apply(ProjectResource resource, ProxyInput input)
-      throws IOException, RestApiException, NoSuchProjectException, InterruptedException {
-    PluginConfig globalConfig = config.getFromGerritConfig(pluginName);
+      throws IOException, RestApiException, InterruptedException {
     String jenkinsName = input.jenkinsname;
     String urlPath = URLDecoder.decode(input.urlpath, StandardCharsets.UTF_8.toString());
     String method = input.method;
-    String jenkinsAuth = null;
-    String targetUrl = null;
 
     if (urlPath == null || jenkinsName == null || urlPath.isEmpty() ||
         jenkinsName.isEmpty()) {
       throw new BadRequestException("jenkinsName is required");
     }
 
-    Config cfg = config.getProjectPluginConfig(resource.getNameKey(), pluginName);
-    for (String instance : cfg.getSubsections(JENKINS_SECTION)) {
-      if (instance.equals(jenkinsName)) {
-        jenkinsAuth = cfg.getString(JENKINS_SECTION, instance, JENKINS_USER_KEY) + ":" +
-          cfg.getString(JENKINS_SECTION, instance, JENKINS_TOKEN_KEY);
-        targetUrl = cfg.getString(JENKINS_SECTION, instance, JENKINS_URL_KEY);
-      }
-    }
-
-    if ((jenkinsAuth == null || targetUrl == null) && globalConfig != null) {
-        jenkinsAuth = globalConfig.getString(JENKINS_USER_KEY) + ":" +
-          globalConfig.getString(JENKINS_TOKEN_KEY);
-        targetUrl = globalConfig.getString(JENKINS_URL_KEY);
-    }
-
-    if (jenkinsAuth == null || targetUrl == null) {
+    Resolved resolved = jenkinsConfig.resolve(jenkinsName, resource.getProjectState());
+    if (resolved == null || resolved.url == null || resolved.user == null ||
+        resolved.token == null) {
       throw new BadRequestException("Invalid configuration jenkins auth or server url missing");
     }
+    String jenkinsAuth = resolved.user + ":" + resolved.token;
+    String targetUrl = resolved.url;
 
     String auth = Base64.getEncoder().encodeToString(jenkinsAuth.getBytes());
     String finalUrl = targetUrl + "/" + urlPath;

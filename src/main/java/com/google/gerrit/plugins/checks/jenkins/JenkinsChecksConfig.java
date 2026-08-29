@@ -14,24 +14,17 @@
 
 package com.google.gerrit.plugins.checks.jenkins;
 
-import com.google.gerrit.extensions.restapi.Response;
-import com.google.gerrit.extensions.restapi.RestReadView;
-import com.google.gerrit.server.project.ProjectResource;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import java.util.Set;
-
-@Singleton
-class GetConfig implements RestReadView<ProjectResource> {
-  private final JenkinsConfig jenkinsConfig;
-
-  @Inject
-  GetConfig(JenkinsConfig jenkinsConfig) {
-    this.jenkinsConfig = jenkinsConfig;
-  }
-
-  @Override
-  public Response<Set<JenkinsChecksConfig>> apply(ProjectResource project) {
-    return Response.ok(jenkinsConfig.allInstances(project.getProjectState()));
-  }
+/**
+ * A single Jenkins instance configuration, serialized into the plugin's
+ * {@code GET /projects/{project}/config} response.
+ *
+ * <p>The {@code token} used for authentication is intentionally not part of this
+ * class so it can never leak into the REST response.
+ */
+class JenkinsChecksConfig {
+  String name;
+  String url;
+  String user;
+  Boolean coverage_enabled;
+  String coverage_id;
 }
