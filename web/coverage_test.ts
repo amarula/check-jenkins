@@ -204,7 +204,7 @@ suite("CoverageClient.computePercentages", () => {
     };
     const result = (client as any).computePercentages(resp);
     assert.deepEqual(result, {
-      "src/foo.ts": { absolute: 50 },
+      "src/foo.ts": { incremental: 50 },
     });
   });
 
@@ -219,7 +219,7 @@ suite("CoverageClient.computePercentages", () => {
     };
     const result = (client as any).computePercentages(resp);
     assert.deepEqual(result, {
-      "src/bar.ts": { absolute: 100 },
+      "src/bar.ts": { incremental: 100 },
     });
   });
 
@@ -234,7 +234,7 @@ suite("CoverageClient.computePercentages", () => {
     };
     const result = (client as any).computePercentages(resp);
     assert.deepEqual(result, {
-      "src/baz.ts": { absolute: 0 },
+      "src/baz.ts": { incremental: 0 },
     });
   });
 
@@ -277,8 +277,8 @@ suite("CoverageClient.computePercentages", () => {
     };
     const result = (client as any).computePercentages(resp);
     assert.deepEqual(result, {
-      "src/covered.ts": { absolute: 100 },
-      "src/missed.ts": { absolute: 0 },
+      "src/covered.ts": { incremental: 100 },
+      "src/missed.ts": { incremental: 0 },
     });
   });
 });

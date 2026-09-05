@@ -450,8 +450,10 @@ export class CoverageClient {
   // ---- Parsing ----
 
   /**
-   * Computes per-file coverage percentages from modified line blocks.
-   * Percentage = covered lines / total modified lines * 100.
+   * Computes per-file incremental coverage percentages from modified line
+   * blocks.  The modified-lines endpoint only reports lines changed by this
+   * CL, so the result is the coverage of new/changed lines, not the whole
+   * file.  Percentage = covered lines / total modified lines * 100.
    */
   private computePercentages(resp: ModifiedLinesResponse | null): {
     [path: string]: PercentageData;
@@ -476,7 +478,7 @@ export class CoverageClient {
       const total = covered + missed;
       if (total > 0) {
         pcts[file.fullyQualifiedFileName] = {
-          absolute: Math.round((covered / total) * 100),
+          incremental: Math.round((covered / total) * 100),
         };
       }
     }

@@ -66,6 +66,10 @@ Result is keyed by `fullyQualifiedFileName` — the absolute path within the rep
 
 Input: same `ModifiedLinesResponse`.
 
+The modified-lines endpoint only reports lines changed by this CL, so the
+computed value is the **incremental** coverage of new/changed lines, not the
+whole-file absolute coverage.
+
 For each file, counts covered vs missed lines across all blocks:
 
 ```
@@ -74,10 +78,10 @@ missed  = Σ (block.endLine - block.startLine + 1)  for all other blocks
 total   = covered + missed
 
 if total > 0:
-    absolute = Math.round((covered / total) * 100)
+    incremental = Math.round((covered / total) * 100)
 ```
 
-Returns `{ [path]: { absolute: number } }`.
+Returns `{ [path]: { incremental: number } }`.
 
 ## Low-coverage alert
 
