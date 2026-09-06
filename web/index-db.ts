@@ -53,8 +53,8 @@ interface CacheEntry<T> {
   lastAccessed: number;
 }
 
-/** Current DB version — v3 invalidates coverage_store (entry shape and key changed). */
-const DB_VERSION = 3;
+/** Current DB version — bump to invalidate coverage_store (a re-fetchable cache). */
+const DB_VERSION = 4;
 
 /**
  * A persistent LRU cache for browser request data using IndexedDB.
@@ -91,10 +91,10 @@ export class RequestLRUCache<T> {
           });
           store.createIndex("lastAccessed", "lastAccessed");
         }
-        // The coverage cache entry's shape changed (percentages now carries
-        // both `incremental` and `absolute`), so entries written by older
-        // versions are dropped and rebuilt on the next fetch.
-        if (event.oldVersion < 3 && db.objectStoreNames.contains("coverage_store")) {
+        // The coverage cache is re-fetchable, so drop it on every schema
+        // upgrade rather than risk serving entries written with an older
+        // shape (or an older key layout).
+        if (db.objectStoreNames.contains("coverage_store")) {
           db.deleteObjectStore("coverage_store");
         }
         if (!db.objectStoreNames.contains("coverage_store")) {

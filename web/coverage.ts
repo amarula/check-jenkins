@@ -261,7 +261,7 @@ interface CoverageCacheEntry {
 }
 
 export class CoverageClient {
-  private static readonly MEMORY_CACHE_LIMIT = 10;
+  private static readonly MEMORY_CACHE_LIMIT = 50;
 
   private plugin: PluginApi;
 
@@ -939,6 +939,17 @@ export class CoverageClient {
               : ""),
         });
       }
+    }
+
+    // Fallback: per-file coverage exists but there are no low-coverage alerts
+    // and no project stats.  Still emit a run so the attempt's coverage link
+    // shows up and its good coverage is visible.
+    if (coverageResults.length === 0 && Object.keys(percentages).length > 0) {
+      coverageResults.push({
+        category: Category.INFO,
+        summary: `${COVERAGE_CHART} Modified files all covered`,
+        message: `${Object.keys(percentages).length} modified file(s) at or above ${OVERALL_LOW_COVERAGE_WARNING_BAR}% incremental coverage.`,
+      });
     }
 
     return coverageResults;
