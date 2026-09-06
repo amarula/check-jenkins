@@ -25,6 +25,7 @@ import {
   CheckResult,
   CheckRun,
   FetchResponse,
+  LinkIcon,
   ResponseCode,
   RunStatus,
 } from "@gerritcodereview/typescript-api/checks";
@@ -199,6 +200,19 @@ export function parseProject(pathName: string): string {
   const idx = pathName.indexOf("/+");
   if (idx === -1) throw new Error(`Invalid path: ${pathName}`);
   return pathName.substring(3, idx);
+}
+
+/**
+ * Computes Java's {@code String.hashCode()} for the given string, returning a
+ * signed 32-bit integer.  The Jenkins Coverage plugin links to a file's report
+ * by the hash code of its relative path, so this must match the JVM exactly.
+ */
+export function javaStringHashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return hash;
 }
 
 /**
@@ -841,7 +855,11 @@ export class CoverageClient {
           const entry = this.cache.get(
             this.makeMemoryKey(jenkins.name, changeNum, patchNum, run.attempt),
           );
-          const coverageResults = this.buildCoverageResults(entry, reason);
+          const coverageResults = this.buildCoverageResults(
+            entry,
+            reason,
+            coverageId,
+          );
           if (coverageResults.length > 0) {
             responseRuns.push({
               checkName: "Code Coverage",
@@ -885,15 +903,23 @@ export class CoverageClient {
 
   /**
    * Builds the coverage check results for a single attempt's cached entry:
-   * project-level stats first, followed by per-file low-coverage alerts.
+   * project-level stats first, followed by per-file low-coverage alerts.  Each
+   * result links to its coverage report in Jenkins.
    */
   private buildCoverageResults(
     entry: CoverageCacheEntry | undefined,
     reason: string | undefined,
+    coverageId: string,
   ): CheckResult[] {
     const projectResp = entry?.projectResponse;
     const percentages = entry?.percentages || {};
     const coverageResults: CheckResult[] = [];
+    const baseUrl = entry?.statusLink
+      ? `${entry.statusLink}${coverageId}`
+      : undefined;
+    const reportLink = (url: string) => [
+      { url, icon: LinkIcon.EXTERNAL, primary: true },
+    ];
 
     // Project-level stats first, so the global percentage is always visible
     // above any per-file alerts.
@@ -924,11 +950,12 @@ export class CoverageClient {
             (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
               ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
               : ""),
+          links: baseUrl ? reportLink(baseUrl) : undefined,
         });
       }
     }
 
-    // Per-file low-coverage alerts.
+    // Per-file low-coverage alerts, each linking to that file's coverage.
     for (const file of Object.keys(percentages)) {
       const inc = percentages[file].incremental;
       if (inc !== undefined && inc < OVERALL_LOW_COVERAGE_WARNING_BAR) {
@@ -938,6 +965,9 @@ export class CoverageClient {
           message: reason
             ? "Low-Coverage-Reason provided — CL will not be blocked."
             : "Please add tests for uncovered lines or add Low-Coverage-Reason in commit message.",
+          links: baseUrl
+            ? reportLink(`${baseUrl}/${javaStringHashCode(file)}/`)
+            : undefined,
         });
       }
     }
@@ -950,6 +980,7 @@ export class CoverageClient {
         category: Category.INFO,
         summary: `${COVERAGE_CHART} Modified files all covered`,
         message: `${Object.keys(percentages).length} modified file(s) at or above ${OVERALL_LOW_COVERAGE_WARNING_BAR}% incremental coverage.`,
+        links: baseUrl ? reportLink(baseUrl) : undefined,
       });
     }
 

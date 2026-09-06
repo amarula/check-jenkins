@@ -24,6 +24,7 @@ import {
   parseProject,
   getLowCoverageReason,
   formatReferenceBuild,
+  javaStringHashCode,
 } from "./coverage";
 import { CoverageType, Side } from "@gerritcodereview/typescript-api/diff";
 import { PluginApi } from "@gerritcodereview/typescript-api/plugin";
@@ -51,6 +52,19 @@ suite("parseProject", () => {
 
   test("throws on empty path", () => {
     assert.throws(() => parseProject(""));
+  });
+});
+
+suite("javaStringHashCode", () => {
+  test("matches Java String.hashCode for known values", () => {
+    assert.equal(javaStringHashCode(""), 0);
+    assert.equal(javaStringHashCode("abc"), 96354);
+  });
+
+  test("returns a signed 32-bit integer", () => {
+    const hash = javaStringHashCode("common/src/commonMain/kotlin/Foo.kt");
+    assert.isTrue(Number.isInteger(hash));
+    assert.isTrue(hash >= -2147483648 && hash <= 2147483647);
   });
 });
 
