@@ -10,9 +10,9 @@ Three independent cache strategies serve different data:
 |---|---|---|---|---|
 | Runs cache | `request_store` | 100 (shared) | `RunsCacheKey` (3-element) | Raw `JenkinsCheckRun[]` payload, served stale-while-revalidate |
 | Fetcher enrichment cache | `request_store` | 100 (shared) | `RequestKey` (4-element) | Enriched warnings + test results (`CheckRun[]`) |
-| Coverage cache | `coverage_store` | 50 | `CoverageCacheKey` (3-element) | Coverage responses, parsed ranges, percentages |
+| Coverage cache | `coverage_store` | 50 | `CoverageCacheKey` (4-element, includes attempt) | Coverage responses, parsed ranges, percentages |
 
-All are backed by the same IndexedDB database (`GerritRequestDB`, version 2). The two fetcher cache types share the `request_store` object store; they are distinguished by key length (3 vs 4 elements).
+All are backed by the same IndexedDB database (`GerritRequestDB`, version 3). The two fetcher cache types share the `request_store` object store; they are distinguished by key length (3 vs 4 elements). The `coverage_store` now also uses a 4-element key (per-attempt), so its pruning is scoped to `request_store` only.
 
 ## IndexedDB layer (`index-db.ts`)
 
@@ -37,8 +37,8 @@ type RunsCacheKey = [name, changeNumber, patchsetNumber];
 // 4-element key for fetcher enrichment data
 type RequestKey = [name, changeNumber, patchsetNumber, numberOfRuns];
 
-// 3-element key for coverage data
-type CoverageCacheKey = [name, changeNumber, patchsetNumber];
+// 4-element key for coverage data (per attempt)
+type CoverageCacheKey = [name, changeNumber, patchsetNumber, attempt];
 ```
 
 ### Entry structure
@@ -181,41 +181,38 @@ private setMemoryCache(key: string, entry: CoverageCacheEntry): void {
 
 ## Coverage cache population flow
 
-`CoverageClient.updateCache()` is the single entry point for populating the coverage cache:
+`CoverageClient.updateCache()` is the single entry point for populating the coverage cache. It runs per attempt, so each replayed build gets its own cached entry:
 
 ```
 updateCache(jenkins, repo, changeNum, patchNum)
   │
-  ├─ 1. Check in-memory cache → hit: touch & return
+  ├─ 1. Reuse runsCache (completed runs per patchset) → hit: return
   │
   ├─ 2. Check pendingFetches (dedup) → hit: await existing promise
   │
-  ├─ 3. Parallel: read IndexedDB + findCompletedRun()
+  ├─ 3. findCompletedRuns() → all COMPLETED runs, newest attempt first
   │
-  ├─ 4. No runInfo + have dbEntry → serve stale
-  │
-  ├─ 5. dbEntry matches runInfo (statusLink + attempt) → promote to memory, return
-  │
-  ├─ 6. No completed run → cache empty result
-  │
-  └─ 7. Fresh fetch: fetchAllCoverage() → parse → cache both tiers
+  └─ 4. For each run → ensureRunCached():
+        ├─ in-memory hit → touch & return
+        ├─ IndexedDB hit with matching (statusLink, attempt) → promote to memory
+        └─ Fresh fetch: fetchAllCoverage() → parse → cache both tiers
 ```
 
 ### Staleness detection
 
-The cache key for invalidation is the pair `(statusLink, attempt)`:
+Each attempt's entry is invalidated independently by its `(statusLink, attempt)` pair:
 
 ```typescript
-if (dbEntry && runInfo
-    && dbEntry.statusLink === runInfo.statusLink
-    && dbEntry.attempt === runInfo.attempt) {
+if (dbEntry
+    && dbEntry.statusLink === run.statusLink
+    && dbEntry.attempt === run.attempt) {
     // Cache hit — promote to memory
     this.setMemoryCache(memKey, dbEntry);
     return;
 }
 ```
 
-When a new build completes, the `statusLink` changes (different build number in the URL) or the `attempt` increments — the cache is invalidated and fresh data is fetched.
+When a new build completes for an attempt, the `statusLink` changes (different build number in the URL) or the `attempt` increments — that attempt's entry is invalidated and fresh data is fetched, while other attempts' entries remain valid.
 
 ## Concurrent request deduplication
 

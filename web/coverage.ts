@@ -55,6 +55,12 @@ declare interface JenkinsRunEntry {
   attempt: number;
 }
 
+/** A completed Jenkins run that has coverage data. */
+declare interface CoverageRun {
+  statusLink: string;
+  attempt: number;
+}
+
 /**
  * Aggregate coverage statistics (all flat key → percentage string).
  * e.g. {"line": "88.44%", "branch": "82.19%", "class": "96.88%", ...}
@@ -116,6 +122,24 @@ declare interface ModifiedLinesFile {
 declare interface ModifiedLinesResponse {
   _class?: string;
   files: ModifiedLinesFile[];
+}
+
+/**
+ * Per-file whole-file (absolute) coverage entry from /coverage/files/api/json.
+ */
+declare interface FileCoverageFile {
+  fullyQualifiedFileName: string;
+  /** Metric name → formatted percentage, e.g. {"line": "88.44%", "branch": "82.19%"}. */
+  metrics?: CoverageStats;
+}
+
+/**
+ * Response from /coverage/files/api/json
+ * _class: io.jenkins.plugins.coverage.metrics.restapi.FileCoverageApi
+ */
+declare interface FileCoverageResponse {
+  _class?: string;
+  files: FileCoverageFile[];
 }
 
 const OVERALL_LOW_COVERAGE_WARNING_BAR = 70;
@@ -250,20 +274,21 @@ export class CoverageClient {
   /** True when the coverage endpoints returned 403 — skip future fetches. */
   private coverageUnavailable: boolean = false;
 
-  /** True when Jenkins is returning 5xx — don't serve stale cached data. */
-  private jenkinsUnavailable: boolean = false;
-
   /**
-   * In-memory LRU cache for coverage entries.
-   * Key: JSON.stringify([jenkinsName, changeNum, patchNum])
+   * In-memory LRU cache for coverage entries, keyed per attempt.
+   * Key: JSON.stringify([jenkinsName, changeNum, patchNum, attempt])
    */
   private cache: Map<string, CoverageCacheEntry> = new Map();
 
+  /** Completed runs per change+patchset, so repeated calls skip the runs fetch. */
+  private runsCache: Map<string, CoverageRun[]> = new Map();
+
   /**
-   * In-flight fetch promises, keyed the same way as `cache`.
+   * In-flight fetch promises, keyed by change+patchset.
    * Deduplicates concurrent calls for the same change+patchset.
    */
-  private pendingFetches: Map<string, Promise<void>> = new Map();
+  private pendingFetches: Map<string, Promise<CoverageRun[] | null>> =
+    new Map();
 
   constructor(plugin: PluginApi) {
     this.provideCoverageRanges = this.provideCoverageRanges.bind(this);
@@ -336,14 +361,16 @@ export class CoverageClient {
   // ---- Data fetching ----
 
   /**
-   * Fetches a completed Jenkins run's statusLink and attempt for the given change.
+   * Fetches the completed Jenkins runs for the given change and patchset,
+   * sorted newest-attempt first.  Each run carries its own statusLink, from
+   * which that attempt's coverage report is fetched.
    */
-  private async findCompletedRun(
+  private async findCompletedRuns(
     jenkins: Config,
     repo: string,
     changeNum: number,
     patchNum: number,
-  ): Promise<{ statusLink: string; attempt: number } | null> {
+  ): Promise<CoverageRun[] | null> {
     const runsUrl = `${jenkins.url}/gerrit-checks/runs?change=${changeNum}&patchset=${patchNum}`;
     const response = await (async () => {
       try {
@@ -360,31 +387,24 @@ export class CoverageClient {
 
     const data = await this.toJson(response);
     // When Jenkins returns 5xx, the proxy sends _jenkins_unavailable rather
-    // than an error status.  Treat it the same as a 403 / null response:
-    // don't try to fetch coverage data, and don't serve stale cached data.
+    // than an error status.  Treat it the same as a 403 / null response.
     if (data != null && data._jenkins_unavailable) {
-      this.jenkinsUnavailable = true;
       return null;
     }
-    // Successful response from Jenkins — clear any previous unavailability flag.
-    this.jenkinsUnavailable = false;
     if (!data?.runs || !Array.isArray(data.runs) || data.runs.length === 0)
-      return null;
+      return [];
 
-    const completedRun = (data.runs as JenkinsRunEntry[]).find(
-      (r) => r.status === "COMPLETED",
-    );
-    if (!completedRun?.statusLink) return null;
-    return {
-      statusLink: completedRun.statusLink,
-      attempt: completedRun.attempt,
-    };
+    return (data.runs as JenkinsRunEntry[])
+      .filter((r) => r.status === "COMPLETED" && r.statusLink)
+      .map((r) => ({ statusLink: r.statusLink, attempt: r.attempt }))
+      .sort((a, b) => b.attempt - a.attempt);
   }
 
   /**
-   * Fetches and merges both coverage endpoints:
-   *  1. /{coverage_id}/api/json       — project stats + per-file percentages
+   * Fetches and merges the coverage endpoints:
+   *  1. /{coverage_id}/api/json          — project stats
    *  2. /{coverage_id}/modified/api/json — per-file modified-line blocks
+   *  3. /{coverage_id}/files/api/json    — per-file whole-file coverage
    */
   private async fetchAllCoverage(
     jenkins: Config,
@@ -393,9 +413,10 @@ export class CoverageClient {
   ): Promise<{
     projectResponse: ProjectCoverageResponse | null;
     modifiedLines: ModifiedLinesResponse | null;
+    fileCoverage: FileCoverageResponse | null;
   }> {
     if (this.coverageUnavailable) {
-      return { projectResponse: null, modifiedLines: null };
+      return { projectResponse: null, modifiedLines: null, fileCoverage: null };
     }
 
     const coverageId = coverageUrlId(jenkins);
@@ -411,14 +432,15 @@ export class CoverageClient {
       }
     };
 
-    // Fetch both endpoints in parallel — they are independent.
-    const [projResp, modResp] = await Promise.all([
+    // Fetch the endpoints in parallel — they are independent.
+    const [projResp, modResp, fileResp] = await Promise.all([
       fetchOne(`${coverageId}/api/json`),
       fetchOne(`${coverageId}/modified/api/json`),
+      fetchOne(`${coverageId}/files/api/json`),
     ]);
 
-    // If both endpoints returned 403, the coverage plugin is not installed —
-    // remember it to avoid re-fetching on future polls.
+    // If both core endpoints returned 403, the coverage plugin is not
+    // installed — remember it to avoid re-fetching on future polls.
     const projDenied = !!(
       projResp &&
       projResp.status != null &&
@@ -431,7 +453,7 @@ export class CoverageClient {
     );
     if (projDenied && modDenied) {
       this.coverageUnavailable = true;
-      return { projectResponse: null, modifiedLines: null };
+      return { projectResponse: null, modifiedLines: null, fileCoverage: null };
     }
 
     let projectResponse: ProjectCoverageResponse | null = null;
@@ -444,7 +466,15 @@ export class CoverageClient {
       modifiedLines = await this.toJson(modResp);
     }
 
-    return { projectResponse, modifiedLines };
+    // The files endpoint is newer than the other two and 404s on older plugin
+    // versions. Parse it defensively: a missing/unparseable response simply
+    // leaves absolute coverage empty (the parser skips responses without files).
+    let fileCoverage: FileCoverageResponse | null = null;
+    if (fileResp && !(fileResp.status != null && fileResp.status === 403)) {
+      fileCoverage = await this.toJson(fileResp);
+    }
+
+    return { projectResponse, modifiedLines, fileCoverage };
   }
 
   // ---- Parsing ----
@@ -480,6 +510,26 @@ export class CoverageClient {
         pcts[file.fullyQualifiedFileName] = {
           incremental: Math.round((covered / total) * 100),
         };
+      }
+    }
+    return pcts;
+  }
+
+  /**
+   * Computes per-file absolute (whole-file) coverage percentages from the
+   * /coverage/files/api/json response.  Uses the line-coverage metric.
+   */
+  private computeAbsolutePercentages(resp: FileCoverageResponse | null): {
+    [path: string]: PercentageData;
+  } {
+    const pcts: { [path: string]: PercentageData } = {};
+    if (!resp?.files) return pcts;
+
+    for (const file of resp.files) {
+      if (!file.fullyQualifiedFileName) continue;
+      const line = parsePct(file.metrics?.line);
+      if (line !== undefined) {
+        pcts[file.fullyQualifiedFileName] = { absolute: line };
       }
     }
     return pcts;
@@ -528,6 +578,15 @@ export class CoverageClient {
     jenkinsName: string,
     changeNum: number,
     patchNum: number,
+    attempt: number,
+  ): string {
+    return JSON.stringify([jenkinsName, changeNum, patchNum, attempt]);
+  }
+
+  private makePatchsetKey(
+    jenkinsName: string,
+    changeNum: number,
+    patchNum: number,
   ): string {
     return JSON.stringify([jenkinsName, changeNum, patchNum]);
   }
@@ -549,15 +608,15 @@ export class CoverageClient {
   // ---- Cache management ----
 
   /**
-   * Populates the coverage cache for the given change+patchset.
+   * Populates the coverage cache for every completed attempt of the given
+   * change+patchset and returns the completed runs (newest attempt first).
    *
-   * Lookup order:
+   * Lookup order per attempt:
    *  1. In-memory Map (fast, survives same-page navigation)
    *  2. IndexedDB         (persistent, survives page reloads)
    *
-   * On an IndexedDB hit we still call {@link findCompletedRun} (cheap) to
-   * check whether the cached statusLink is still current.  Only when the
-   * link has changed (new build completed) do we re-fetch the heavy
+   * On an IndexedDB hit the cached statusLink is compared against the run's
+   * current statusLink; only when they differ do we re-fetch the heavy
    * coverage payloads.
    */
   private async updateCache(
@@ -565,103 +624,126 @@ export class CoverageClient {
     repo: string,
     changeNum: number,
     patchNum: number,
-  ): Promise<void> {
+  ): Promise<CoverageRun[] | null> {
     if (isNaN(changeNum) || isNaN(patchNum) || changeNum <= 0 || patchNum <= 0)
-      return;
+      return null;
 
-    const memKey = this.makeMemoryKey(jenkins.name, changeNum, patchNum);
+    const patchsetKey = this.makePatchsetKey(jenkins.name, changeNum, patchNum);
 
-    // 1. In-memory hit — touch and return
+    // Reuse already-known completed runs for this patchset.
+    const known = this.runsCache.get(patchsetKey);
+    if (known) return known;
+
+    // Dedupe concurrent calls for the same change+patchset.
+    const pending = this.pendingFetches.get(patchsetKey);
+    if (pending) return pending;
+
+    const promise = this.doUpdateCache(jenkins, repo, changeNum, patchNum);
+    this.pendingFetches.set(patchsetKey, promise);
+    try {
+      const runs = await promise;
+      if (runs) this.runsCache.set(patchsetKey, runs);
+      return runs;
+    } finally {
+      this.pendingFetches.delete(patchsetKey);
+    }
+  }
+
+  private async doUpdateCache(
+    jenkins: Config,
+    repo: string,
+    changeNum: number,
+    patchNum: number,
+  ): Promise<CoverageRun[] | null> {
+    const runs = await this.findCompletedRuns(jenkins, repo, changeNum, patchNum).catch(
+      () => null,
+    );
+    if (runs === null) return null;
+
+    for (const run of runs) {
+      await this.ensureRunCached(jenkins, repo, changeNum, patchNum, run);
+    }
+    return runs;
+  }
+
+  private async ensureRunCached(
+    jenkins: Config,
+    repo: string,
+    changeNum: number,
+    patchNum: number,
+    run: CoverageRun,
+  ): Promise<void> {
+    const memKey = this.makeMemoryKey(
+      jenkins.name,
+      changeNum,
+      patchNum,
+      run.attempt,
+    );
+
+    // In-memory hit — touch and return.
     const existing = this.cache.get(memKey);
     if (existing) {
       this.setMemoryCache(memKey, existing);
       return;
     }
 
-    // 2. Dedupe concurrent calls for the same change
-    const pending = this.pendingFetches.get(memKey);
-    if (pending) return pending;
+    const cacheKey: CoverageCacheKey = [
+      jenkins.name,
+      changeNum,
+      patchNum,
+      run.attempt,
+    ];
+    const dbEntry = await coverageCacheService.get(cacheKey).catch(
+      () => undefined,
+    );
 
-    let resolve: () => void;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    this.pendingFetches.set(memKey, promise);
+    // IndexedDB hit with matching statusLink and attempt — promote to memory.
+    if (
+      dbEntry &&
+      dbEntry.statusLink === run.statusLink &&
+      dbEntry.attempt === run.attempt
+    ) {
+      this.setMemoryCache(memKey, dbEntry);
+      return;
+    }
 
-    try {
-      // 3. Read IndexedDB and check current run info in parallel.
-      const cacheKey: CoverageCacheKey = [jenkins.name, changeNum, patchNum];
-      const [dbEntry, runInfo] = await Promise.all([
-        coverageCacheService.get(cacheKey),
-        this.findCompletedRun(jenkins, repo, changeNum, patchNum).catch(
-          () => null,
-        ),
-      ]);
+    const changeInfo: CoverageChangeInfo = {
+      changeNum,
+      patchNum,
+      jenkinsUrl: jenkins.url,
+    };
 
-      // If the runs endpoint failed but we have cached data, serve it stale
-      // (unless Jenkins is returning 5xx — then don't show stale coverage data).
-      if (!runInfo && dbEntry) {
-        if (this.jenkinsUnavailable) return;
-        this.setMemoryCache(memKey, dbEntry);
-        return;
-      }
-
-      // 5. IndexedDB hit with matching statusLink and attempt — promote to memory
-      if (
-        dbEntry &&
-        runInfo &&
-        dbEntry.statusLink === runInfo.statusLink &&
-        dbEntry.attempt === runInfo.attempt
-      ) {
-        this.setMemoryCache(memKey, dbEntry);
-        return;
-      }
-
-      // 6. No completed run — cache the empty result
-      const changeInfo: CoverageChangeInfo = {
-        changeNum,
-        patchNum,
-        jenkinsUrl: jenkins.url,
-      };
-      if (!runInfo) {
-        const entry: CoverageCacheEntry = {
-          changeInfo,
-          statusLink: null,
-          attempt: null,
-          projectResponse: null,
-          ranges: null,
-          percentages: null,
-        };
-        this.setMemoryCache(memKey, entry);
-        await coverageCacheService.put(cacheKey, entry);
-        return;
-      }
-
-      // 7. Fetch fresh coverage data
-      const { projectResponse, modifiedLines } = await this.fetchAllCoverage(
-        jenkins,
-        repo,
-        runInfo.statusLink,
-      ).catch((e) => {
+    // Fetch fresh coverage data for this attempt.
+    const { projectResponse, modifiedLines, fileCoverage } =
+      await this.fetchAllCoverage(jenkins, repo, run.statusLink).catch((e) => {
         console.warn("checks-jenkins: coverage fetch failed", e);
-        return { projectResponse: null, modifiedLines: null };
+        return {
+          projectResponse: null,
+          modifiedLines: null,
+          fileCoverage: null,
+        };
       });
 
-      const entry: CoverageCacheEntry = {
-        changeInfo,
-        statusLink: runInfo.statusLink,
-        attempt: runInfo.attempt,
-        projectResponse,
-        ranges: this.parseRanges(modifiedLines),
-        percentages: this.computePercentages(modifiedLines),
-      };
-
-      this.setMemoryCache(memKey, entry);
-      await coverageCacheService.put(cacheKey, entry);
-    } finally {
-      this.pendingFetches.delete(memKey);
-      resolve!();
+    // Merge incremental (modified lines) and absolute (whole file) coverage
+    // into a single per-file map.
+    const percentages = this.computePercentages(modifiedLines);
+    for (const [path, absolute] of Object.entries(
+      this.computeAbsolutePercentages(fileCoverage),
+    )) {
+      percentages[path] = { ...percentages[path], ...absolute };
     }
+
+    const entry: CoverageCacheEntry = {
+      changeInfo,
+      statusLink: run.statusLink,
+      attempt: run.attempt,
+      projectResponse,
+      ranges: this.parseRanges(modifiedLines),
+      percentages,
+    };
+
+    this.setMemoryCache(memKey, entry);
+    await coverageCacheService.put(cacheKey, entry);
   }
 
   // ---- Public API ----
@@ -677,9 +759,10 @@ export class CoverageClient {
       const repo = parseProject(window.location.pathname);
       const jenkins = await this.ensureConfig(repo);
       if (!jenkins || !this.isEnabled()) return undefined;
-      await this.updateCache(jenkins, repo, changeNum, patchNum);
+      const runs = await this.updateCache(jenkins, repo, changeNum, patchNum);
+      if (!runs || runs.length === 0) return undefined;
       const entry = this.cache.get(
-        this.makeMemoryKey(jenkins.name, changeNum, patchNum),
+        this.makeMemoryKey(jenkins.name, changeNum, patchNum, runs[0].attempt),
       );
       return entry?.ranges?.[path] || [];
     } catch {
@@ -711,14 +794,20 @@ export class CoverageClient {
       const repo = parseProject(window.location.pathname);
       const jenkins = await this.ensureConfig(repo);
       if (!jenkins || !this.isEnabled()) return null;
-      await this.updateCache(
+      const runs = await this.updateCache(
         jenkins,
         repo,
         Number(changeNum),
         Number(patchNum),
       );
+      if (!runs || runs.length === 0) return null;
       const entry = this.cache.get(
-        this.makeMemoryKey(jenkins.name, Number(changeNum), Number(patchNum)),
+        this.makeMemoryKey(
+          jenkins.name,
+          Number(changeNum),
+          Number(patchNum),
+          runs[0].attempt,
+        ),
       );
       return entry?.percentages?.[path] || null;
     } catch {
@@ -741,74 +830,30 @@ export class CoverageClient {
         return { responseCode: ResponseCode.OK, runs: [] };
 
       const coverageId = coverageUrlId(jenkins);
-
-      await this.updateCache(jenkins, project, changeNum, patchNum);
-
-      const entry = this.cache.get(
-        this.makeMemoryKey(jenkins.name, changeNum, patchNum),
-      );
-      const projectResp = entry?.projectResponse;
-      const percentages = entry?.percentages || {};
       const reason = getLowCoverageReason(commitMessage);
       const responseRuns: CheckRun[] = [];
-      const coverageResults: CheckResult[] = [];
 
-      // Per-file low-coverage alerts
-      for (const file of Object.keys(percentages)) {
-        const inc = percentages[file].incremental;
-        if (inc !== undefined && inc < OVERALL_LOW_COVERAGE_WARNING_BAR) {
-          coverageResults.push({
-            category: reason ? Category.INFO : Category.WARNING,
-            summary: `${COVERAGE_CRITICAL} ${file}: incremental ${inc}% < ${OVERALL_LOW_COVERAGE_WARNING_BAR}%`,
-            message: reason
-              ? "Low-Coverage-Reason provided — CL will not be blocked."
-              : "Please add tests for uncovered lines or add Low-Coverage-Reason in commit message.",
-          });
-        }
-      }
-
-      // Fallback: show project-level stats
-      if (coverageResults.length === 0 && projectResp?.projectStatistics) {
-        const s = projectResp.projectStatistics;
-        const parts: string[] = [];
-        if (s.line)
-          parts.push(`Line: ${coverageEmoji(parsePct(s.line))} ${s.line}`);
-        if (s.branch)
-          parts.push(
-            `Branch: ${coverageEmoji(parsePct(s.branch))} ${s.branch}`,
+      // One Code Coverage run per completed attempt, each bound to its own
+      // statusLink so switching attempts shows that attempt's coverage.
+      const runs = await this.updateCache(jenkins, project, changeNum, patchNum);
+      if (runs) {
+        for (const run of runs) {
+          const entry = this.cache.get(
+            this.makeMemoryKey(jenkins.name, changeNum, patchNum, run.attempt),
           );
-        if (s.file)
-          parts.push(`File: ${coverageEmoji(parsePct(s.file))} ${s.file}`);
-        if (s.class)
-          parts.push(`Class: ${coverageEmoji(parsePct(s.class))} ${s.class}`);
-        if (parts.length > 0) {
-          const linePct = parsePct(s.line);
-          coverageResults.push({
-            category:
-              linePct !== undefined &&
-              linePct < OVERALL_LOW_COVERAGE_WARNING_BAR
-                ? Category.WARNING
-                : Category.INFO,
-            summary: `${COVERAGE_CHART} Project coverage: ${parts.join(", ")}`,
-            message:
-              `Coverage metrics for this build. Loc: ${s.loc || "N/A"}.` +
-              (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
-                ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
-                : ""),
-          });
+          const coverageResults = this.buildCoverageResults(entry, reason);
+          if (coverageResults.length > 0) {
+            responseRuns.push({
+              checkName: "Code Coverage",
+              status: RunStatus.COMPLETED,
+              attempt: run.attempt,
+              results: coverageResults,
+              statusLink: entry?.statusLink
+                ? `${entry.statusLink}${coverageId}`
+                : undefined,
+            });
+          }
         }
-      }
-
-      if (coverageResults.length > 0) {
-        responseRuns.push({
-          checkName: "Code Coverage",
-          status: RunStatus.COMPLETED,
-          attempt: entry?.attempt ?? undefined,
-          results: coverageResults,
-          statusLink: entry?.statusLink
-            ? `${entry.statusLink}${coverageId}`
-            : undefined,
-        });
       }
 
       if (
@@ -836,6 +881,67 @@ export class CoverageClient {
       console.info("checks-jenkins: mayBeShowLowCoverageAlert error", e);
       return { responseCode: ResponseCode.OK, runs: [] };
     }
+  }
+
+  /**
+   * Builds the coverage check results for a single attempt's cached entry:
+   * per-file low-coverage alerts, falling back to project-level stats.
+   */
+  private buildCoverageResults(
+    entry: CoverageCacheEntry | undefined,
+    reason: string | undefined,
+  ): CheckResult[] {
+    const projectResp = entry?.projectResponse;
+    const percentages = entry?.percentages || {};
+    const coverageResults: CheckResult[] = [];
+
+    // Per-file low-coverage alerts
+    for (const file of Object.keys(percentages)) {
+      const inc = percentages[file].incremental;
+      if (inc !== undefined && inc < OVERALL_LOW_COVERAGE_WARNING_BAR) {
+        coverageResults.push({
+          category: reason ? Category.INFO : Category.WARNING,
+          summary: `${COVERAGE_CRITICAL} ${file}: incremental ${inc}% < ${OVERALL_LOW_COVERAGE_WARNING_BAR}%`,
+          message: reason
+            ? "Low-Coverage-Reason provided — CL will not be blocked."
+            : "Please add tests for uncovered lines or add Low-Coverage-Reason in commit message.",
+        });
+      }
+    }
+
+    // Fallback: show project-level stats
+    if (coverageResults.length === 0 && projectResp?.projectStatistics) {
+      const s = projectResp.projectStatistics;
+      const parts: string[] = [];
+      if (s.line)
+        parts.push(`Line: ${coverageEmoji(parsePct(s.line))} ${s.line}`);
+      if (s.branch)
+        parts.push(
+          `Branch: ${coverageEmoji(parsePct(s.branch))} ${s.branch}`,
+        );
+      if (s.file)
+        parts.push(`File: ${coverageEmoji(parsePct(s.file))} ${s.file}`);
+      if (s.class)
+        parts.push(`Class: ${coverageEmoji(parsePct(s.class))} ${s.class}`);
+      if (parts.length > 0) {
+        const linePct = parsePct(s.line);
+        coverageResults.push({
+          category:
+            linePct !== undefined &&
+            linePct < OVERALL_LOW_COVERAGE_WARNING_BAR
+              ? Category.WARNING
+              : Category.INFO,
+          summary: `${COVERAGE_CHART} Project coverage: ${parts.join(", ")}`,
+          message:
+            `Coverage metrics for this build. Loc: ${s.loc || "N/A"}.` +
+            (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
+              ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
+              : ""),
+        });
+      }
+    }
+
+    return coverageResults;
   }
 
   async showPercentageColumns(): Promise<boolean> {

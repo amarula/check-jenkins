@@ -283,6 +283,84 @@ suite("CoverageClient.computePercentages", () => {
   });
 });
 
+suite("CoverageClient.computeAbsolutePercentages", () => {
+  let client: CoverageClient;
+
+  setup(() => {
+    client = new CoverageClient({} as unknown as PluginApi);
+  });
+
+  test("returns empty object for null response", () => {
+    const result = (client as any).computeAbsolutePercentages(null);
+    assert.deepEqual(result, {});
+  });
+
+  test("returns empty object for response without files", () => {
+    const result = (client as any).computeAbsolutePercentages({});
+    assert.deepEqual(result, {});
+  });
+
+  test("parses line coverage from the metrics map", () => {
+    const resp = {
+      files: [
+        {
+          fullyQualifiedFileName: "src/foo.ts",
+          metrics: { line: "88.44%" },
+        },
+      ],
+    };
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {
+      "src/foo.ts": { absolute: 88.44 },
+    });
+  });
+
+  test("skips file without a parseable line metric", () => {
+    const resp = {
+      files: [
+        {
+          fullyQualifiedFileName: "src/foo.ts",
+          metrics: { branch: "50%" },
+        },
+      ],
+    };
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {});
+  });
+
+  test("skips file with no fullyQualifiedFileName", () => {
+    const resp = {
+      files: [
+        {
+          metrics: { line: "90%" },
+        },
+      ],
+    } as any;
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {});
+  });
+
+  test("handles multiple files", () => {
+    const resp = {
+      files: [
+        {
+          fullyQualifiedFileName: "src/covered.ts",
+          metrics: { line: "100.00%" },
+        },
+        {
+          fullyQualifiedFileName: "src/missed.ts",
+          metrics: { line: "0.00%" },
+        },
+      ],
+    };
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {
+      "src/covered.ts": { absolute: 100 },
+      "src/missed.ts": { absolute: 0 },
+    });
+  });
+});
+
 suite("CoverageClient.parseRanges", () => {
   let client: CoverageClient;
 

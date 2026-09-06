@@ -8,26 +8,27 @@ The coverage subsystem fetches code-coverage metrics from Jenkins' [Code Coverag
 
 ## Endpoints
 
-Two Jenkins REST endpoints are queried in parallel:
+Three Jenkins REST endpoints are queried in parallel:
 
 | Endpoint | Response class | Purpose |
 |---|---|---|
 | `{statusLink}{coverage_id}/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.CoverageApi` | Project-level stats, per-file delta percentages |
 | `{statusLink}{coverage_id}/modified/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.ModifiedLinesCoverageApi` | Per-file modified line blocks with coverage types |
+| `{statusLink}{coverage_id}/files/api/json` | `io.jenkins.plugins.coverage.metrics.restapi.FileCoverageApi` | Per-file whole-file (absolute) coverage of modified files |
 
 `{coverage_id}` is the Jenkins Coverage plugin report id (default `coverage`), configurable per Jenkins instance via the `coverage_id` config key.
 
-Both are fetched for the **most recent completed run** on the change's patchset.
+All three are fetched **per completed attempt** on the change's patchset. The `files` endpoint is newer than the other two and returns `404` on older Coverage plugin versions; the frontend treats that as "no absolute coverage" rather than an error.
 
-## Finding the completed run
+## Finding completed runs
 
-Before fetching coverage data, `CoverageClient.findCompletedRun()` queries:
+Before fetching coverage data, `CoverageClient.findCompletedRuns()` queries:
 
 ```
 GET {jenkins}/gerrit-checks/runs?change={changeNum}&patchset={patchNum}
 ```
 
-It scans the returned runs for the first one with `status === "COMPLETED"` and extracts its `statusLink` and `attempt` number. These serve as the staleness key for cache invalidation (see [caching.md](caching.md)).
+It returns every run with `status === "COMPLETED"` (sorted newest-attempt first). Each attempt has its own `statusLink`, and coverage is fetched per attempt from that link — so a replayed build shows its own coverage row instead of pointing at a stale link. The `(statusLink, attempt)` pair is the staleness key for cache invalidation (see [caching.md](caching.md)).
 
 ## Data parsing
 
@@ -82,6 +83,20 @@ if total > 0:
 ```
 
 Returns `{ [path]: { incremental: number } }`.
+
+### `computeAbsolutePercentages()` — per-file absolute coverage
+
+Input: `FileCoverageResponse` from `{coverage_id}/files/api/json`, with `files[].metrics` mapping metric names to formatted percentages (e.g. `{"line": "88.44%", "branch": "82.19%"}`).
+
+For each file, the `line` metric is parsed with `parsePct()`:
+
+```
+absolute = parsePct(metrics["line"])
+```
+
+Returns `{ [path]: { absolute: number } }`. Files without a parseable `line` metric are skipped.
+
+`updateCache()` merges the incremental and absolute maps so each path carries both fields in a single `PercentageData` object.
 
 ## Low-coverage alert
 

@@ -26,12 +26,13 @@ export type RequestKey = [
 ];
 
 /**
- * Coverage cache key: [jenkinsName, changeNumber, patchsetNumber]
+ * Coverage cache key: [jenkinsName, changeNumber, patchsetNumber, attempt]
  */
 export type CoverageCacheKey = [
   name: string,
   changeNumber: number,
   patchsetNumber: number,
+  attempt: number,
 ];
 
 /**
@@ -52,8 +53,8 @@ interface CacheEntry<T> {
   lastAccessed: number;
 }
 
-/** Current DB version — v2 adds coverage_store alongside request_store. */
-const DB_VERSION = 2;
+/** Current DB version — v3 invalidates coverage_store (entry shape and key changed). */
+const DB_VERSION = 3;
 
 /**
  * A persistent LRU cache for browser request data using IndexedDB.
@@ -89,6 +90,12 @@ export class RequestLRUCache<T> {
             keyPath: "key",
           });
           store.createIndex("lastAccessed", "lastAccessed");
+        }
+        // The coverage cache entry's shape changed (percentages now carries
+        // both `incremental` and `absolute`), so entries written by older
+        // versions are dropped and rebuilt on the next fetch.
+        if (event.oldVersion < 3 && db.objectStoreNames.contains("coverage_store")) {
+          db.deleteObjectStore("coverage_store");
         }
         if (!db.objectStoreNames.contains("coverage_store")) {
           const store = db.createObjectStore("coverage_store", {
@@ -164,8 +171,8 @@ export class RequestLRUCache<T> {
         };
       };
 
-      // Staleness pruning only applies to 4-element fetcher keys
-      if (key.length >= 4) {
+      // Staleness pruning only applies to 4-element fetcher keys in request_store
+      if (this.storeName === "request_store" && key.length >= 4) {
         const [name, changeNumber, patchsetNumber, runs] = key;
         const range = IDBKeyRange.bound(
           [name, changeNumber, patchsetNumber, 0] as IDBValidKey,
