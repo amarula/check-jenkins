@@ -885,7 +885,7 @@ export class CoverageClient {
 
   /**
    * Builds the coverage check results for a single attempt's cached entry:
-   * per-file low-coverage alerts, falling back to project-level stats.
+   * project-level stats first, followed by per-file low-coverage alerts.
    */
   private buildCoverageResults(
     entry: CoverageCacheEntry | undefined,
@@ -895,22 +895,9 @@ export class CoverageClient {
     const percentages = entry?.percentages || {};
     const coverageResults: CheckResult[] = [];
 
-    // Per-file low-coverage alerts
-    for (const file of Object.keys(percentages)) {
-      const inc = percentages[file].incremental;
-      if (inc !== undefined && inc < OVERALL_LOW_COVERAGE_WARNING_BAR) {
-        coverageResults.push({
-          category: reason ? Category.INFO : Category.WARNING,
-          summary: `${COVERAGE_CRITICAL} ${file}: incremental ${inc}% < ${OVERALL_LOW_COVERAGE_WARNING_BAR}%`,
-          message: reason
-            ? "Low-Coverage-Reason provided — CL will not be blocked."
-            : "Please add tests for uncovered lines or add Low-Coverage-Reason in commit message.",
-        });
-      }
-    }
-
-    // Fallback: show project-level stats
-    if (coverageResults.length === 0 && projectResp?.projectStatistics) {
+    // Project-level stats first, so the global percentage is always visible
+    // above any per-file alerts.
+    if (projectResp?.projectStatistics) {
       const s = projectResp.projectStatistics;
       const parts: string[] = [];
       if (s.line)
@@ -937,6 +924,20 @@ export class CoverageClient {
             (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
               ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
               : ""),
+        });
+      }
+    }
+
+    // Per-file low-coverage alerts.
+    for (const file of Object.keys(percentages)) {
+      const inc = percentages[file].incremental;
+      if (inc !== undefined && inc < OVERALL_LOW_COVERAGE_WARNING_BAR) {
+        coverageResults.push({
+          category: reason ? Category.INFO : Category.WARNING,
+          summary: `${COVERAGE_CRITICAL} ${file}: incremental ${inc}% < ${OVERALL_LOW_COVERAGE_WARNING_BAR}%`,
+          message: reason
+            ? "Low-Coverage-Reason provided — CL will not be blocked."
+            : "Please add tests for uncovered lines or add Low-Coverage-Reason in commit message.",
         });
       }
     }
