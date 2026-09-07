@@ -684,9 +684,13 @@ export class CoverageClient {
     );
     if (runs === null) return null;
 
-    for (const run of runs) {
-      await this.ensureRunCached(jenkins, repo, changeNum, patchNum, run);
-    }
+    // Fetch coverage for every attempt in parallel so a change with many
+    // attempts doesn't wait on one attempt's round-trip at a time.
+    await Promise.all(
+      runs.map((run) =>
+        this.ensureRunCached(jenkins, repo, changeNum, patchNum, run),
+      ),
+    );
     return runs;
   }
 
