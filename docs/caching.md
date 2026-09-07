@@ -156,7 +156,7 @@ The `CoverageClient` maintains a second in-memory cache layer on top of IndexedD
 
 ```typescript
 private cache: Map<string, CoverageCacheEntry> = new Map();
-private static readonly MEMORY_CACHE_LIMIT = 10;
+private static readonly MEMORY_CACHE_LIMIT = 50;
 ```
 
 ### Eviction
@@ -176,7 +176,7 @@ private setMemoryCache(key: string, entry: CoverageCacheEntry): void {
 
 ### Why two tiers?
 
-- **Memory** (size 10): sub-millisecond lookup for files within the same change — the diff view asks `provideCoverageRanges()` per file, which would be too slow hitting IndexedDB every time.
+- **Memory** (size 50): sub-millisecond lookup for files within the same change — the diff view asks `provideCoverageRanges()` per file, which would be too slow hitting IndexedDB every time.
 - **IndexedDB** (size 50): survives page reloads. When a user navigates away and comes back, coverage data is available instantly without re-fetching from Jenkins.
 
 ## Coverage cache population flow
@@ -192,7 +192,7 @@ updateCache(jenkins, repo, changeNum, patchNum)
   │
   ├─ 3. findCompletedRuns() → all COMPLETED runs, newest attempt first
   │
-  └─ 4. For each run → ensureRunCached():
+  └─ 4. For each run, fetched in parallel → ensureRunCached():
         ├─ in-memory hit → touch & return
         ├─ IndexedDB hit with matching (statusLink, attempt) → promote to memory
         └─ Fresh fetch: fetchAllCoverage() → parse → cache both tiers
@@ -216,19 +216,27 @@ When a new build completes for an attempt, the `statusLink` changes (different b
 
 ## Concurrent request deduplication
 
-A `pendingFetches` map prevents concurrent `updateCache()` calls for the same change from issuing duplicate HTTP requests:
+A `pendingFetches` map prevents concurrent `updateCache()` calls for the same change+patchset from issuing duplicate HTTP requests, and `runsCache` reuses the already-resolved completed runs:
 
 ```typescript
-private pendingFetches: Map<string, Promise<void>> = new Map();
+private pendingFetches: Map<string, Promise<CoverageRun[] | null>> = new Map();
 
 // In updateCache():
-const pending = this.pendingFetches.get(memKey);
+const patchsetKey = this.makePatchsetKey(jenkins.name, changeNum, patchNum);
+const known = this.runsCache.get(patchsetKey);
+if (known) return known;
+const pending = this.pendingFetches.get(patchsetKey);
 if (pending) return pending;  // await existing in-flight fetch
 
-const promise = new Promise<void>(r => { resolve = r; });
-this.pendingFetches.set(memKey, promise);
-// ... fetch ...
-this.pendingFetches.delete(memKey);
+const promise = this.doUpdateCache(jenkins, repo, changeNum, patchNum);
+this.pendingFetches.set(patchsetKey, promise);
+try {
+  const runs = await promise;
+  if (runs) this.runsCache.set(patchsetKey, runs);
+  return runs;
+} finally {
+  this.pendingFetches.delete(patchsetKey);
+}
 ```
 
 This is critical during `SHOW_CHANGE` where `prefetchCoverageRanges()` and `showPercentageColumns()` both call `ensureConfig()` + `updateCache()` concurrently.
