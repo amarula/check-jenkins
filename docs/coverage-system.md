@@ -3,7 +3,7 @@
 The coverage subsystem fetches code-coverage metrics from Jenkins' [Code Coverage API](https://plugins.jenkins.io/code-coverage-api/) plugin and surfaces them at three levels in the Gerrit UI:
 
 1. **Line-level annotations** — green (COVERED) / red (NOT_COVERED) highlights in the diff view.
-2. **File-list columns** — per-file absolute and incremental coverage percentages.
+2. **File-list columns** — per-file line, branch and instruction coverage (whole file) plus line coverage of new lines (`Cov(L) | Cov(B) | Cov(I) | ΔCov(L)`).
 3. **Checks tab alert** — a `Code Coverage` check run warning on low-coverage files.
 
 ## Endpoints
@@ -86,42 +86,50 @@ Returns `{ [path]: { incremental: number } }`.
 
 ### `computeAbsolutePercentages()` — per-file absolute coverage
 
-Input: `FileCoverageResponse` from `{coverage_id}/files/api/json`, with `files[].metrics` mapping metric names to formatted percentages (e.g. `{"line": "88.44%", "branch": "82.19%"}`).
+Input: `FileCoverageResponse` from `{coverage_id}/files/api/json`, with `files[].metrics` mapping metric names to formatted percentages (e.g. `{"line": "88.44%", "branch": "82.19%", "instruction": "98.36%"}`).
 
-For each file, the `line` metric is parsed with `parsePct()`:
+For each file, the `line`, `branch` and `instruction` metrics are parsed with `parsePct()`:
 
 ```
 absolute = parsePct(metrics["line"])
+absolute_branch = parsePct(metrics["branch"])
+absolute_instruction = parsePct(metrics["instruction"])
 ```
 
-Returns `{ [path]: { absolute: number } }`. Files without a parseable `line` metric are skipped.
+Returns `{ [path]: { absolute, absolute_branch, absolute_instruction } }`, setting only the metrics that are present.
 
-`updateCache()` merges the incremental and absolute maps so each path carries both fields in a single `PercentageData` object.
+`updateCache()` merges the incremental and absolute maps so each path carries all fields in a single `PercentageData` object.
 
 ## Low-coverage alert
 
-`mayBeShowLowCoverageAlert()` runs as part of the unified checks provider. It evaluates per-file coverage against a threshold:
+`mayBeShowLowCoverageAlert()` runs as part of the unified checks provider. It emits one `Code Coverage` check run per completed attempt, each with a `statusLink` to that attempt's coverage report. Within a run, results are ordered project-stats-first, then per-file alerts:
 
 ```typescript
 const OVERALL_LOW_COVERAGE_WARNING_BAR = 70;
 ```
 
-### Per-file check
+### Project summary (first line)
+
+When `projectStatistics` is present, the run starts with the global project coverage:
+
+```
+"Project coverage: Line: 88.44%, Branch: 82.19%, File: 94.12%, Class: 96.88%"
+```
+
+If `Line` coverage is below 70%, this is `WARNING`; otherwise `INFO`. This result links to the overall report at `{statusLink}{coverage_id}`.
+
+### Per-file alerts
 
 For every file with coverage data, if `incremental < 70`:
 
 - **Without `Low-Coverage-Reason`**: emits a `WARNING` result with message *"Please add tests for uncovered lines or add Low-Coverage-Reason in commit message."*
 - **With `Low-Coverage-Reason`**: demotes to `INFO` with message *"Low-Coverage-Reason provided — CL will not be blocked."*
 
-### Project-level fallback
+Each per-file alert links to that file's coverage report at `{statusLink}{coverage_id}/{javaStringHashCode(file)}/`.
 
-When no individual file is below threshold, the system falls back to project-level stats from `projectStatistics`:
+### Fully-covered fallback
 
-```
-"Project coverage: Line: 88.44%, Branch: 82.19%, File: 94.12%, Class: 96.88%"
-```
-
-If `Line` coverage is below 70%, this is `WARNING`; otherwise `INFO`.
+When an attempt has per-file coverage but no file below threshold and no project stats, a single `INFO` result — *"Modified files all covered"* — is emitted so the attempt still surfaces its coverage link.
 
 ### Quality gates
 
