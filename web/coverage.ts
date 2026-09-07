@@ -38,10 +38,14 @@ import { CoverageCacheKey } from "./index-db";
 import { coverageCacheService } from "./request-cache-service";
 
 export declare interface PercentageData {
+  /** Line coverage of the whole file (Cov(L)). */
   absolute?: number;
+  /** Line coverage of new/changed lines (ΔCov(L)). */
   incremental?: number;
-  absolute_unit_tests?: number;
-  incremental_unit_tests?: number;
+  /** Branch coverage of the whole file (Cov(B)). */
+  absolute_branch?: number;
+  /** Instruction coverage of the whole file (Cov(I)). */
+  absolute_instruction?: number;
 }
 
 declare interface CoverageChangeInfo {
@@ -531,7 +535,7 @@ export class CoverageClient {
 
   /**
    * Computes per-file absolute (whole-file) coverage percentages from the
-   * /coverage/files/api/json response.  Uses the line-coverage metric.
+   * /coverage/files/api/json response, for line, branch and instruction.
    */
   private computeAbsolutePercentages(resp: FileCoverageResponse | null): {
     [path: string]: PercentageData;
@@ -542,8 +546,14 @@ export class CoverageClient {
     for (const file of resp.files) {
       if (!file.fullyQualifiedFileName) continue;
       const line = parsePct(file.metrics?.line);
-      if (line !== undefined) {
-        pcts[file.fullyQualifiedFileName] = { absolute: line };
+      const branch = parsePct(file.metrics?.branch);
+      const instruction = parsePct(file.metrics?.instruction);
+      const data: PercentageData = {};
+      if (line !== undefined) data.absolute = line;
+      if (branch !== undefined) data.absolute_branch = branch;
+      if (instruction !== undefined) data.absolute_instruction = instruction;
+      if (Object.keys(data).length > 0) {
+        pcts[file.fullyQualifiedFileName] = data;
       }
     }
     return pcts;

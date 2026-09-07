@@ -58,13 +58,13 @@ suite("BaseComponent.instances tracking", () => {
 });
 
 suite("AbsoluteHeaderView", () => {
-  test("renders Cov text", async () => {
+  test("renders Cov(L) text", async () => {
     const el = await fixture<AbsoluteHeaderView>(
       html`<absolute-header-view></absolute-header-view>`,
     );
     const div = query(el, ".coverage-percentage-column");
     assert.isDefined(div);
-    assert.include(div!.textContent!, "Cov");
+    assert.include(div!.textContent!, "Cov(L)");
     BaseComponent.instances.delete(el);
   });
 
@@ -84,20 +84,20 @@ suite("AbsoluteHeaderView", () => {
     const div = query(el, ".coverage-percentage-column");
     assert.equal(
       div!.getAttribute("title"),
-      "Absolute coverage percentage(All Tests) of the whole file",
+      "Line coverage of the whole file",
     );
     BaseComponent.instances.delete(el);
   });
 });
 
 suite("IncrementalHeaderView", () => {
-  test("renders ΔCov text", async () => {
+  test("renders ΔCov(L) text", async () => {
     const el = await fixture<IncrementalHeaderView>(
       html`<incremental-header-view></incremental-header-view>`,
     );
     const div = query(el, ".coverage-percentage-column");
     assert.isDefined(div);
-    assert.include(div!.textContent!, "ΔCov");
+    assert.include(div!.textContent!, "ΔCov(L)");
     BaseComponent.instances.delete(el);
   });
 
@@ -108,7 +108,7 @@ suite("IncrementalHeaderView", () => {
     const div = query(el, ".coverage-percentage-column");
     assert.equal(
       div!.getAttribute("title"),
-      "Incremental coverage percentage(All Tests) of new lines in the file",
+      "Line coverage of new lines in the file",
     );
     BaseComponent.instances.delete(el);
   });

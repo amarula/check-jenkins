@@ -156,9 +156,9 @@ export class AbsoluteHeaderView extends BaseComponent {
     return html`
       <div
         class="${this.computeCoverageClass()}"
-        title="Absolute coverage percentage(All Tests) of the whole file"
+        title="Line coverage of the whole file"
       >
-        Cov
+        Cov(L)
       </div>
     `;
   }
@@ -175,9 +175,9 @@ export class IncrementalHeaderView extends BaseComponent {
     return html`
       <div
         class="${this.computeCoverageClass()}"
-        title="Incremental coverage percentage(All Tests) of new lines in the file"
+        title="Line coverage of new lines in the file"
       >
-        ΔCov
+        ΔCov(L)
       </div>
     `;
   }
@@ -254,57 +254,57 @@ export class IncrementalSummaryView extends BaseComponent {
 }
 
 /**
- * Component for absolute unit tests header.
+ * Component for branch coverage header.
  */
-@customElement('absolute-unit-tests-header-view')
-export class AbsoluteUnitTestsHeaderView extends BaseComponent {
+@customElement('branch-header-view')
+export class BranchHeaderView extends BaseComponent {
   static override styles = COMMON_CSS;
 
   override render() {
     return html`
       <div
         class="${this.computeCoverageClass()}"
-        title="Absolute coverage percentage(Unit Tests) of the whole file"
+        title="Branch coverage of the whole file"
       >
-        Cov(U)
+        Cov(B)
       </div>
     `;
   }
 }
 
 /**
- * Component for incremental unit tests header.
+ * Component for instruction coverage header.
  */
-@customElement('incremental-unit-tests-header-view')
-export class IncrementalUnitTestsHeaderView extends BaseComponent {
+@customElement('instruction-header-view')
+export class InstructionHeaderView extends BaseComponent {
   static override styles = COMMON_CSS;
 
   override render() {
     return html`
       <div
         class="${this.computeCoverageClass()}"
-        title="Incremental coverage percentage(Unit Tests) of new lines in the file"
+        title="Instruction coverage of the whole file"
       >
-        ΔCov(U)
+        Cov(I)
       </div>
     `;
   }
 }
 
 /**
- * Component for absolute unit tests data.
+ * Component for branch coverage data.
  */
-@customElement('absolute-unit-tests-content-view')
-export class AbsoluteUnitTestsContentView extends BaseCoverageComponent {
+@customElement('branch-content-view')
+export class BranchContentView extends BaseCoverageComponent {
   static override styles = COMMON_CSS;
 
   constructor() {
     super();
-    this.kind = 'absolute_unit_tests';
+    this.kind = 'absolute_branch';
   }
 
   override getPercentageFromData(pd: PercentageData) {
-    return pd.absolute_unit_tests;
+    return pd.absolute_branch;
   }
 
   override render() {
@@ -315,19 +315,19 @@ export class AbsoluteUnitTestsContentView extends BaseCoverageComponent {
 }
 
 /**
- * Component for incremental unit tests data.
+ * Component for instruction coverage data.
  */
-@customElement('incremental-unit-tests-content-view')
-export class IncrementalUnitTestsContentView extends BaseCoverageComponent {
+@customElement('instruction-content-view')
+export class InstructionContentView extends BaseCoverageComponent {
   static override styles = COMMON_CSS;
 
   constructor() {
     super();
-    this.kind = 'incremental_unit_tests';
+    this.kind = 'absolute_instruction';
   }
 
   override getPercentageFromData(pd: PercentageData) {
-    return pd.incremental_unit_tests;
+    return pd.absolute_instruction;
   }
 
   override render() {
@@ -338,10 +338,10 @@ export class IncrementalUnitTestsContentView extends BaseCoverageComponent {
 }
 
 /**
- * Component for absolute unit tests summary.
+ * Component for branch coverage summary.
  */
-@customElement('absolute-unit-tests-summary-view')
-export class AbsoluteUnitTestsSummaryView extends BaseComponent {
+@customElement('branch-summary-view')
+export class BranchSummaryView extends BaseComponent {
   static override styles = COMMON_CSS;
 
   override render() {
@@ -350,10 +350,10 @@ export class AbsoluteUnitTestsSummaryView extends BaseComponent {
 }
 
 /**
- * Component for incremental unit tests summary.
+ * Component for instruction coverage summary.
  */
-@customElement('incremental-unit-tests-summary-view')
-export class IncrementalUnitTestsSummaryView extends BaseComponent {
+@customElement('instruction-summary-view')
+export class InstructionSummaryView extends BaseComponent {
   static override styles = COMMON_CSS;
 
   override render() {

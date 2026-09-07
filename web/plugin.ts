@@ -121,19 +121,19 @@ window.Gerrit?.install(async (plugin: PluginApi): Promise<void> => {
   plugin
     .registerDynamicCustomComponent(
       "change-view-file-list-header",
+      "branch-header-view",
+    )
+    .onAttached(onAttached());
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-header",
+      "instruction-header-view",
+    )
+    .onAttached(onAttached());
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-header",
       "incremental-header-view",
-    )
-    .onAttached(onAttached());
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-header",
-      "absolute-unit-tests-header-view",
-    )
-    .onAttached(onAttached());
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-header",
-      "incremental-unit-tests-header-view",
     )
     .onAttached(onAttached());
 
@@ -147,19 +147,19 @@ window.Gerrit?.install(async (plugin: PluginApi): Promise<void> => {
   plugin
     .registerDynamicCustomComponent(
       "change-view-file-list-content",
+      "branch-content-view",
+    )
+    .onAttached(onAttached(true));
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-content",
+      "instruction-content-view",
+    )
+    .onAttached(onAttached(true));
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-content",
       "incremental-content-view",
-    )
-    .onAttached(onAttached(true));
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-content",
-      "absolute-unit-tests-content-view",
-    )
-    .onAttached(onAttached(true));
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-content",
-      "incremental-unit-tests-content-view",
     )
     .onAttached(onAttached(true));
 
@@ -173,19 +173,19 @@ window.Gerrit?.install(async (plugin: PluginApi): Promise<void> => {
   plugin
     .registerDynamicCustomComponent(
       "change-view-file-list-summary",
+      "branch-summary-view",
+    )
+    .onAttached(onAttached());
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-summary",
+      "instruction-summary-view",
+    )
+    .onAttached(onAttached());
+  plugin
+    .registerDynamicCustomComponent(
+      "change-view-file-list-summary",
       "incremental-summary-view",
-    )
-    .onAttached(onAttached());
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-summary",
-      "absolute-unit-tests-summary-view",
-    )
-    .onAttached(onAttached());
-  plugin
-    .registerDynamicCustomComponent(
-      "change-view-file-list-summary",
-      "incremental-unit-tests-summary-view",
     )
     .onAttached(onAttached());
 });

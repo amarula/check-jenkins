@@ -329,7 +329,7 @@ suite("CoverageClient.computeAbsolutePercentages", () => {
     });
   });
 
-  test("skips file without a parseable line metric", () => {
+  test("parses branch coverage from the metrics map", () => {
     const resp = {
       files: [
         {
@@ -339,7 +339,43 @@ suite("CoverageClient.computeAbsolutePercentages", () => {
       ],
     };
     const result = (client as any).computeAbsolutePercentages(resp);
-    assert.deepEqual(result, {});
+    assert.deepEqual(result, {
+      "src/foo.ts": { absolute_branch: 50 },
+    });
+  });
+
+  test("parses instruction coverage from the metrics map", () => {
+    const resp = {
+      files: [
+        {
+          fullyQualifiedFileName: "src/foo.ts",
+          metrics: { instruction: "90%" },
+        },
+      ],
+    };
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {
+      "src/foo.ts": { absolute_instruction: 90 },
+    });
+  });
+
+  test("parses line, branch and instruction together", () => {
+    const resp = {
+      files: [
+        {
+          fullyQualifiedFileName: "src/foo.ts",
+          metrics: { line: "88.44%", branch: "50%", instruction: "90%" },
+        },
+      ],
+    };
+    const result = (client as any).computeAbsolutePercentages(resp);
+    assert.deepEqual(result, {
+      "src/foo.ts": {
+        absolute: 88.44,
+        absolute_branch: 50,
+        absolute_instruction: 90,
+      },
+    });
   });
 
   test("skips file with no fullyQualifiedFileName", () => {
