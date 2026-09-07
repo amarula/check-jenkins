@@ -22,12 +22,10 @@ import {PercentageData, coverageEmoji} from './coverage';
 const COMMON_CSS = css`
   :host {
     display: inline-block;
-    min-width: 3.5em;
+    width: 4.5em;
     box-sizing: border-box;
   }
   .coverage-percentage-column {
-    display: inline-block;
-    min-width: 3.5em;
     text-align: center;
     width: 100%;
   }
