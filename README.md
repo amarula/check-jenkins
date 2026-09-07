@@ -126,9 +126,9 @@ When enabled, the plugin queries the Jenkins [Code Coverage API](https://plugins
 | Feature | Location | Description |
 |---|---|---|
 | **Line coverage** | Diff view | Covered / missed annotations on modified lines (`COVERED` / `NOT_COVERED` ranges) |
-| **File percentages** | File list columns | Absolute and incremental coverage percentages per file |
+| **File percentages** | File list columns | `Cov(L)` line, `Cov(B)` branch and `Cov(I)` instruction coverage of the whole file, plus `ΔCov(L)` line coverage of new lines, per file |
 | **Low-coverage alert** | Checks tab | `Code Coverage` check run warns when a file's incremental coverage drops below 70% |
-| **Project stats** | Checks tab | Fallback summary with line/branch/file/class-level coverage when no files are below threshold |
+| **Project stats** | Checks tab | Project coverage summary shown first, followed by per-file alerts for files below 70% |
 
 #### Coverage display
 
