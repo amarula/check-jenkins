@@ -37,6 +37,7 @@ The plugin splits into two halves wired together by Gerrit's plugin framework:
 │  /error-explanation/api/json  Build failure reasons      │
 │  /coverage/api/json           Project coverage stats     │
 │  /coverage/modified/api/json  Per-file modified lines    │
+│  /coverage/files/api/json     Per-file absolute coverage │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +63,7 @@ The plugin splits into two halves wired together by Gerrit's plugin framework:
 ## Key design decisions
 
 - **Proxy pattern for auth**: The TypeScript frontend never calls Jenkins directly when authentication is configured. Instead it POSTs to the `proxy-trigger` Gerrit endpoint, which forwards the request with Basic auth headers. This keeps Jenkins credentials server-side only.
-- **Two-tier caching with stale-while-revalidate**: Check runs are cached in IndexedDB (2 min TTL) and served immediately while a background fetch refreshes the data. Coverage data is cached in memory (LRU, size 10) for fast same-page navigation and in IndexedDB for persistence across page reloads. Staleness is detected by comparing the Jenkins run's `statusLink` and `attempt` (coverage) or by structural comparison of `checkName`/`status`/`statusDescription` (runs).
+- **Two-tier caching with stale-while-revalidate**: Check runs are cached in IndexedDB (2 min TTL) and served immediately while a background fetch refreshes the data. Coverage data is cached in memory (LRU, size 50) for fast same-page navigation and in IndexedDB for persistence across page reloads. Staleness is detected by comparing the Jenkins run's `statusLink` and `attempt` (coverage) or by structural comparison of `checkName`/`status`/`statusDescription` (runs).
 - **Unavailable endpoint tracking**: When a Jenkins endpoint returns 403 or an error, it is marked as unavailable for the remainder of the session to avoid request storms.
 - **Single checks provider**: Both Jenkins run data and coverage alerts are merged into a single Gerrit checks provider, giving users one unified CI status view.
 - **Flattened-tree naming**: Upstream/downstream pipeline relationships (encoded in `externalId` by the Jenkins-side plugin) are parsed on the frontend and rendered as a flat list with depth-based numbering and tree/leaf emojis. Multiple independent trees are grouped by root so each pipeline's runs stay visually together. Independent runs without parent-child relationships keep their original names. See [Frontend](docs/frontend.md) for details.
