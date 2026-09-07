@@ -8,19 +8,19 @@ The coverage percentage columns in Gerrit's file list are implemented as [Lit](h
 LitElement
   └── BaseComponent                    (shown, instances)
         ├── BaseCoverageComponent      (changeNum, patchRange, path, provider, percentageText, kind)
-        │     ├── AbsoluteContentView        (absolute percentage)
-        │     ├── IncrementalContentView     (incremental percentage)
-        │     ├── AbsoluteUnitTestsContentView     (absolute unit-test percentage)
-        │     └── IncrementalUnitTestsContentView  (incremental unit-test percentage)
+        │     ├── AbsoluteContentView        (line coverage)
+        │     ├── IncrementalContentView     (line coverage, new lines)
+        │     ├── BranchContentView          (branch coverage)
+        │     └── InstructionContentView     (instruction coverage)
         │
-        ├── AbsoluteHeaderView          ("Cov" header)
-        ├── IncrementalHeaderView       ("ΔCov" header)
-        ├── AbsoluteUnitTestsHeaderView ("Cov(U)" header)
-        ├── IncrementalUnitTestsHeaderView ("ΔCov(U)" header)
+        ├── AbsoluteHeaderView          ("Cov(L)" header)
+        ├── BranchHeaderView            ("Cov(B)" header)
+        ├── InstructionHeaderView       ("Cov(I)" header)
+        ├── IncrementalHeaderView       ("ΔCov(L)" header)
         ├── AbsoluteSummaryView         (empty summary cell)
-        ├── IncrementalSummaryView      (empty summary cell)
-        ├── AbsoluteUnitTestsSummaryView      (empty summary cell)
-        └── IncrementalUnitTestsSummaryView   (empty summary cell)
+        ├── BranchSummaryView           (empty summary cell)
+        ├── InstructionSummaryView      (empty summary cell)
+        └── IncrementalSummaryView      (empty summary cell)
 ```
 
 ## BaseComponent
@@ -106,20 +106,22 @@ Each subclass overrides `getPercentageFromData()` to extract its metric:
 
 | Component | `kind` | Extracts |
 |---|---|---|
-| `AbsoluteContentView` | `absolute` | `pd.absolute` |
-| `IncrementalContentView` | `incremental` | `pd.incremental` |
-| `AbsoluteUnitTestsContentView` | `absolute_unit_tests` | `pd.absolute_unit_tests` |
-| `IncrementalUnitTestsContentView` | `incremental_unit_tests` | `pd.incremental_unit_tests` |
+| `AbsoluteContentView` | `absolute` | `pd.absolute` (line) |
+| `IncrementalContentView` | `incremental` | `pd.incremental` (line, new lines) |
+| `BranchContentView` | `absolute_branch` | `pd.absolute_branch` |
+| `InstructionContentView` | `absolute_instruction` | `pd.absolute_instruction` |
 
 ## Registration in plugin.ts
 
 Components are registered into three file-list table slots:
 
+Columns appear in the order `Cov(L) | Cov(B) | Cov(I) | ΔCov(L)`.
+
 | Slot | Registration ID | Components |
 |---|---|---|
-| `change-view-file-list-header` | Column headers | `absolute-header-view`, `incremental-header-view`, `absolute-unit-tests-header-view`, `incremental-unit-tests-header-view` |
-| `change-view-file-list-content` | Per-file data cells | `absolute-content-view`, `incremental-content-view`, `absolute-unit-tests-content-view`, `incremental-unit-tests-content-view` |
-| `change-view-file-list-summary` | Summary row | `absolute-summary-view`, `incremental-summary-view`, `absolute-unit-tests-summary-view`, `incremental-unit-tests-summary-view` |
+| `change-view-file-list-header` | Column headers | `absolute-header-view`, `branch-header-view`, `instruction-header-view`, `incremental-header-view` |
+| `change-view-file-list-content` | Per-file data cells | `absolute-content-view`, `branch-content-view`, `instruction-content-view`, `incremental-content-view` |
+| `change-view-file-list-summary` | Summary row | `absolute-summary-view`, `branch-summary-view`, `instruction-summary-view`, `incremental-summary-view` |
 
 ### Content vs header registration
 
@@ -146,12 +148,10 @@ All components share common styles:
 ```css
 :host {
     display: inline-block;
-    min-width: 3.5em;
+    width: 4.5em;
     box-sizing: border-box;
 }
 .coverage-percentage-column {
-    display: inline-block;
-    min-width: 3.5em;
     text-align: center;
     width: 100%;
 }
@@ -160,6 +160,10 @@ All components share common styles:
 }
 ```
 
+The fixed `width` (rather than a `min-width`) keeps the header and data cells
+the same width so the file list stays aligned, and `text-align: center` centers
+the label / circle + percentage within the column.
+
 ## Custom element names
 
 Defined via `@customElement()` decorator:
@@ -167,14 +171,14 @@ Defined via `@customElement()` decorator:
 | Decorator | HTML tag |
 |---|---|
 | `@customElement('absolute-header-view')` | `<absolute-header-view>` |
+| `@customElement('branch-header-view')` | `<branch-header-view>` |
+| `@customElement('instruction-header-view')` | `<instruction-header-view>` |
 | `@customElement('incremental-header-view')` | `<incremental-header-view>` |
 | `@customElement('absolute-content-view')` | `<absolute-content-view>` |
+| `@customElement('branch-content-view')` | `<branch-content-view>` |
+| `@customElement('instruction-content-view')` | `<instruction-content-view>` |
 | `@customElement('incremental-content-view')` | `<incremental-content-view>` |
 | `@customElement('absolute-summary-view')` | `<absolute-summary-view>` |
+| `@customElement('branch-summary-view')` | `<branch-summary-view>` |
+| `@customElement('instruction-summary-view')` | `<instruction-summary-view>` |
 | `@customElement('incremental-summary-view')` | `<incremental-summary-view>` |
-| `@customElement('absolute-unit-tests-header-view')` | `<absolute-unit-tests-header-view>` |
-| `@customElement('incremental-unit-tests-header-view')` | `<incremental-unit-tests-header-view>` |
-| `@customElement('absolute-unit-tests-content-view')` | `<absolute-unit-tests-content-view>` |
-| `@customElement('incremental-unit-tests-content-view')` | `<incremental-unit-tests-content-view>` |
-| `@customElement('absolute-unit-tests-summary-view')` | `<absolute-unit-tests-summary-view>` |
-| `@customElement('incremental-unit-tests-summary-view')` | `<incremental-unit-tests-summary-view>` |
