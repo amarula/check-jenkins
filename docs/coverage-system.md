@@ -110,13 +110,13 @@ const OVERALL_LOW_COVERAGE_WARNING_BAR = 70;
 
 ### Project summary (first line)
 
-When `projectStatistics` is present, the run starts with the global project coverage:
+When `projectStatistics` is present, the run starts with the global project coverage, with each metric's change vs the reference build appended from `projectDelta`:
 
 ```
-"Project coverage: Line: 88.44%, Branch: 82.19%, File: 94.12%, Class: 96.88%"
+"Project coverage: Line: 🟢 88.44% (+5.70%), Branch: 🟢 82.19% (+3.33%), File: 🟢 100.00% (+3.46%), Class: 🟢 96.88% (+6.86%)"
 ```
 
-If `Line` coverage is below 70%, this is `WARNING`; otherwise `INFO`. This result links to the overall report at `{statusLink}{coverage_id}`.
+If `Line` coverage is below 70%, this is `WARNING`; otherwise `INFO`. This result links to the overall report at `{statusLink}{coverage_id}`. When `projectDelta` is absent, the deltas are simply omitted; the `Loc` delta (`ΔLoc`) is appended to the result message.
 
 ### Per-file alerts
 

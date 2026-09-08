@@ -939,17 +939,28 @@ export class CoverageClient {
     // above any per-file alerts.
     if (projectResp?.projectStatistics) {
       const s = projectResp.projectStatistics;
+      const delta = projectResp.projectDelta;
+      const deltaOf = (metric: string): string => {
+        const d = delta?.[metric];
+        return d ? ` (${d})` : "";
+      };
       const parts: string[] = [];
       if (s.line)
-        parts.push(`Line: ${coverageEmoji(parsePct(s.line))} ${s.line}`);
+        parts.push(
+          `Line: ${coverageEmoji(parsePct(s.line))} ${s.line}${deltaOf("line")}`,
+        );
       if (s.branch)
         parts.push(
-          `Branch: ${coverageEmoji(parsePct(s.branch))} ${s.branch}`,
+          `Branch: ${coverageEmoji(parsePct(s.branch))} ${s.branch}${deltaOf("branch")}`,
         );
       if (s.file)
-        parts.push(`File: ${coverageEmoji(parsePct(s.file))} ${s.file}`);
+        parts.push(
+          `File: ${coverageEmoji(parsePct(s.file))} ${s.file}${deltaOf("file")}`,
+        );
       if (s.class)
-        parts.push(`Class: ${coverageEmoji(parsePct(s.class))} ${s.class}`);
+        parts.push(
+          `Class: ${coverageEmoji(parsePct(s.class))} ${s.class}${deltaOf("class")}`,
+        );
       if (parts.length > 0) {
         const linePct = parsePct(s.line);
         coverageResults.push({
@@ -961,6 +972,7 @@ export class CoverageClient {
           summary: `${COVERAGE_CHART} Project coverage: ${parts.join(", ")}`,
           message:
             `Coverage metrics for this build. Loc: ${s.loc || "N/A"}.` +
+            (delta?.loc ? ` ΔLoc: ${delta.loc}.` : "") +
             (projectResp.referenceBuild && projectResp.referenceBuild !== "-"
               ? ` Reference build: ${formatReferenceBuild(projectResp.referenceBuild)}.`
               : ""),
